@@ -53,13 +53,12 @@ def main():
     st.sidebar.markdown(f"**Gösterilen Kayıt:** {len(df_filtered)}")
 
     # --- ANA SEKMELERİ OLUŞTURMA ---
-    tab_dash, tab_analiz = st.tabs(["📊 Karar Destek Dashboard'u", "🔎 Detaylı Veri Seti Analizi"])
+    tab_dash, tab_analiz = st.tabs(["📊 Karar Destek Dashboard'u", "🔎 Detaylı Değişken Analizi"])
 
     # =========================================================================
     # TAB 1: MEVCUT DASHBOARD (Grafikler ve Metrikler)
     # =========================================================================
     with tab_dash:
-        # İzlem ve Aşı Ayrıştırma (Melt)
         izlem_cols = ['GEBE İZLEM', 'LOHUSA İZLEM', 'BEBEK İZLEM', 'ÇOCUK İZLEM']
         asi_cols = ['DABT-İPA-HİB-HEP-B', 'HEP B', 'BCG', 'KKK', 'HEP A', 'KPA', 'OPA', 'SU ÇİÇEĞİ', 'DABT-İPA', 'TD']
         
@@ -84,7 +83,6 @@ def main():
         asi_stats.columns = ['Aşı ve Doz', 'Frekans']
         toplam_asi = asi_stats['Frekans'].sum()
 
-        # Temel Metrikler
         total_records = len(df_filtered)
         tc_col = 'İTİRAZ KONUSU KİŞİNİN TC KİMLİK NO'
         unique_children = df_filtered[tc_col].nunique() if tc_col in df_filtered.columns else total_records
@@ -96,7 +94,6 @@ def main():
         m4.metric("Eksik Aşı Dozu Toplamı", f"{toplam_asi:,}")
         st.divider()
 
-        # Grafikler
         colA, colB = st.columns(2)
         with colA:
             if not asi_stats.empty:
@@ -125,64 +122,83 @@ def main():
                 st.plotly_chart(fig_decision, use_container_width=True)
 
     # =========================================================================
-    # TAB 2: DETAYLI VERİ SETİ ANALİZİ (YENİ EKLENEN KISIM)
+    # TAB 2: DETAYLI DEĞİŞKEN ANALİZİ (YENİ VE İSTENEN FORMAT)
     # =========================================================================
     with tab_analiz:
-        st.header("1. Genel Veri Seti Özeti")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Toplam Satır (Gözlem)", f"{df.shape[0]:,}")
-        c2.metric("Toplam Sütun (Değişken)", f"{df.shape[1]:,}")
-        c3.metric("Toplam Boş Hücre (Eksik Veri)", f"{df.isnull().sum().sum():,}")
+        st.header("🔎 Sütun (Değişken) Bazlı Tekil Analiz Raporu")
+        st.markdown("Aşağıda, yüklediğiniz verideki her bir sütunun yapısı, eksik verileri ve dağılımları tek tek analiz edilmiştir.")
         st.divider()
 
-        st.header("2. Sütun Bazlı Profil Çıkarma")
-        st.markdown("Veri setinizdeki her bir sütunun (değişkenin) tipini, boş veri oranını ve benzersiz değer sayısını gösterir.")
-        
-        # Sütun profil verisi hazırlama
-        profil_verisi = []
+        toplam_gozlem = len(df)
+
         for col in df.columns:
-            profil_verisi.append({
-                "Sütun Adı": col,
-                "Veri Tipi": str(df[col].dtype).replace('object', 'Metin/Kategori').replace('float64', 'Ondalıklı Sayı').replace('int64', 'Tam Sayı').replace('datetime64[ns]', 'Tarih'),
-                "Boş Hücre": df[col].isnull().sum(),
-                "Eksik Oranı (%)": round((df[col].isnull().sum() / len(df)) * 100, 1),
-                "Benzersiz Değer": df[col].nunique()
-            })
-        
-        df_profil = pd.DataFrame(profil_verisi)
-        st.dataframe(
-            df_profil.style.format({'Eksik Oranı (%)': '{:.1f}%'}).background_gradient(subset=['Eksik Oranı (%)'], cmap='Reds'),
-            use_container_width=True, 
-            hide_index=True
-        )
-
-        st.divider()
-        st.header("3. Dinamik Sıklık Analizi (Çapraz Sorgu)")
-        st.markdown("Aşağıdan analiz etmek istediğiniz bir sütunu seçerek içindeki değerlerin dağılımını görebilirsiniz.")
-        
-        # Kullanıcıya sadece anlamlı analiz yapılabilecek (kategorik veya az benzersiz değerli) sütunları sun
-        analiz_edilebilir_sutunlar = [col for col in df.columns if df[col].nunique() < 200]
-        
-        secilen_sutun = st.selectbox("Analiz Edilecek Sütunu Seçiniz:", analiz_edilebilir_sutunlar)
-        
-        if secilen_sutun:
-            sutun_dagilimi = df[secilen_sutun].value_counts().reset_index()
-            sutun_dagilimi.columns = [secilen_sutun, 'Frekans (Sayı)']
-            sutun_dagilimi['Yüzdelik (%)'] = (sutun_dagilimi['Frekans (Sayı)'] / sutun_dagilimi['Frekans (Sayı)'].sum() * 100).round(2)
+            st.subheader(f"📌 DEĞİŞKEN: {col}")
             
-            kol1, kol2 = st.columns([1, 1])
-            with kol1:
-                st.markdown(f"**{secilen_sutun}** Sütununa Ait Frekans Tablosu")
-                st.dataframe(sutun_dagilimi.style.format({'Yüzdelik (%)': '{:.2f}%'}), use_container_width=True, hide_index=True)
-            with kol2:
-                # Eğer benzersiz değer sayısı 15'ten azsa pasta grafik, çoksa bar grafik çiz
-                if len(sutun_dagilimi) <= 15:
-                    fig_dinamik = px.pie(sutun_dagilimi, values='Frekans (Sayı)', names=secilen_sutun, hole=0.3, title=f'{secilen_sutun} Dağılımı')
+            # 1. Genel Bilgi Tablosu
+            bos_hucre = df[col].isnull().sum()
+            bos_orani = (bos_hucre / toplam_gozlem) * 100
+            benzersiz = df[col].nunique()
+            
+            genel_df = pd.DataFrame({
+                "Özellik": ["Sütun Adı", "Toplam Gözlem Sayısı", "Boş Hücre Sayısı", "Boş Hücre Oranı (%)", "Benzersiz Değer Sayısı"],
+                "Bilgi": [col, f"{toplam_gozlem:,}", f"{bos_hucre:,}", f"%{bos_orani:.2f}", f"{benzersiz:,}"]
+            })
+            
+            st.table(genel_df)
+
+            # Sütunun sayısal mı kategorik mi olduğunu anlama
+            is_numeric = False
+            
+            # TC No, Telefon No, Birim Kodu gibi veriler sayısal olsa da istatistiksel olarak kategoriktir.
+            # Bu yüzden bu kelimeleri içeren sütunları sayısal saymıyoruz.
+            kategorik_kelimeler = ["TC", "NO", "KOD", "TARİH"]
+            is_categorical_forced = any(k in col for k in kategorik_kelimeler)
+
+            if not is_categorical_forced:
+                if pd.api.types.is_numeric_dtype(df[col]):
+                    is_numeric = True
                 else:
-                    fig_dinamik = px.bar(sutun_dagilimi.head(20), x='Frekans (Sayı)', y=secilen_sutun, orientation='h', title=f'{secilen_sutun} Dağılımı (İlk 20)')
-                    fig_dinamik.update_layout(yaxis={'categoryorder':'total ascending'})
+                    # Aşı dozları (1, 2) gibi metin formatında ama aslında sayısal olanları tespit etme
+                    temp_num = pd.to_numeric(df[col], errors='coerce')
+                    # Eğer dolu verilerin tamamı sayıya dönüşebiliyorsa bunu sayısal kabul et
+                    if temp_num.notnull().sum() > 0 and temp_num.notnull().sum() == df[col].notnull().sum():
+                        is_numeric = True
+                        num_series = temp_num
+
+            # 2. Tip bazlı alt tablo
+            if is_numeric:
+                # Sayısal İstatistik Tablosu
+                s = num_series if not pd.api.types.is_numeric_dtype(df[col]) else df[col]
                 
-                st.plotly_chart(fig_dinamik, use_container_width=True)
+                stat_df = pd.DataFrame({
+                    "İstatistik": ["Ortalama", "Medyan", "Minimum", "Maksimum", "Std. Sapma"],
+                    "Değer": [
+                        round(s.mean(), 2) if pd.notnull(s.mean()) else "-",
+                        round(s.median(), 2) if pd.notnull(s.median()) else "-",
+                        round(s.min(), 2) if pd.notnull(s.min()) else "-",
+                        round(s.max(), 2) if pd.notnull(s.max()) else "-",
+                        round(s.std(), 2) if pd.notnull(s.std()) else "-"
+                    ]
+                })
+                st.table(stat_df)
+                
+            else:
+                # Kategorik (Frekans) Tablosu
+                if benzersiz > 0:
+                    val_counts = df[col].value_counts().reset_index()
+                    val_counts.columns = ['Değer', 'Frekans']
+                    val_counts['Yüzde'] = (val_counts['Frekans'] / val_counts['Frekans'].sum() * 100).apply(lambda x: f"%{x:.2f}")
+                    
+                    # Çok fazla benzersiz değer varsa sayfayı dondurmamak için ilk 20'yi göster
+                    if len(val_counts) > 20:
+                        st.info(f"💡 Bu değişkende çok fazla benzersiz değer ({benzersiz:,}) olduğu için sadece en sık görülen ilk 20 değer listelenmiştir.")
+                        st.table(val_counts.head(20).astype(str))
+                    else:
+                        st.table(val_counts.astype(str))
+                else:
+                    st.info("Bu sütunda veri bulunmamaktadır (Tüm hücreler boş).")
+            
+            st.markdown("---") # Sütunlar arasına çizgi çek
 
 if __name__ == "__main__":
     main()
